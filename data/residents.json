@@ -1,0 +1,43 @@
+[
+  {
+    "id": "margaret",
+    "name": "Margaret",
+    "birth_year": 1941,
+    "hometown": "Brighton",
+    "background": "Former seamstress; met her husband at a Saturday dance on the pier. Loves a sing-song.",
+    "favourites": [
+      {"name": "Elvis Presley", "type": "artist"},
+      {"name": "Doris Day", "type": "artist"},
+      {"name": "The Sound of Music", "type": "movie"},
+      {"name": "Coronation Street", "type": "tv_show"}
+    ],
+    "avoid": ["war films", "loud crowded venues"]
+  },
+  {
+    "id": "winston",
+    "name": "Winston",
+    "birth_year": 1944,
+    "hometown": "Kingston, Jamaica (moved to London 1962)",
+    "background": "Bus conductor for 30 years; played dominoes every Friday; proud of his garden.",
+    "favourites": [
+      {"name": "Desmond Dekker", "type": "artist"},
+      {"name": "Nat King Cole", "type": "artist"},
+      {"name": "The Harder They Come", "type": "movie"},
+      {"name": "The Lonely Londoners", "type": "book"}
+    ],
+    "avoid": []
+  },
+  {
+    "id": "harjit",
+    "name": "Harjit",
+    "birth_year": 1948,
+    "hometown": "Ludhiana, Punjab (moved to Southall 1968)",
+    "background": "Ran a fabric shop with her sister; loves old Hindi film songs and cooking for family.",
+    "favourites": [
+      {"name": "Lata Mangeshkar", "type": "artist"},
+      {"name": "Mohammed Rafi", "type": "artist"},
+      {"name": "Mughal-e-Azam", "type": "movie"}
+    ],
+    "avoid": ["very spicy food (medication)"]
+  }
+]

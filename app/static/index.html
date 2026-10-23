@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Encore · taste-grounded reminiscence planner</title>
+  <meta name="description" content="Encore turns a few known favourites into a personalised dementia reminiscence session, grounded in Qloo's cultural taste graph." />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Fraunces:opsz,wght@9..144,500;9..144,700&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <header class="top">
+    <div class="brand">
+      <span class="logo" aria-hidden="true">&#9835;</span>
+      <div>
+        <h1>Encore</h1>
+        <p class="tag">Personal reminiscence sessions for people living with dementia, planned by an agent that knows what they love.</p>
+      </div>
+    </div>
+    <div id="modes" class="modes" aria-live="polite"></div>
+  </header>
+
+  <main class="layout">
+    <section class="panel setup" aria-labelledby="setup-h">
+      <h2 id="setup-h">1 · Who is the session for?</h2>
+      <div id="residents" class="residents" role="group" aria-label="Residents"></div>
+
+      <details class="add">
+        <summary>+ Add a resident</summary>
+        <form id="add-form">
+          <label>Preferred name <input name="name" required maxlength="40" /></label>
+          <label>Birth year <input name="birth_year" type="number" min="1915" max="2010" required value="1945" /></label>
+          <label>Grew up in <input name="hometown" maxlength="80" /></label>
+          <label>A little about them <textarea name="background" rows="2" maxlength="300"></textarea></label>
+          <label>Favourites <small>one per line, as <code>type: name</code> (artist, movie, tv_show, book, place)</small>
+            <textarea name="favourites" rows="4" required placeholder="artist: Shirley Bassey&#10;movie: Brief Encounter&#10;tv_show: Dad's Army"></textarea></label>
+          <label>Avoid <small>comma separated</small> <input name="avoid" placeholder="war films, loud venues" /></label>
+          <button type="submit" class="btn ghost">Add resident</button>
+        </form>
+      </details>
+
+      <h2>2 · What kind of session?</h2>
+      <div class="seg" role="radiogroup" aria-label="Session type">
+        <label><input type="radio" name="session" value="one_to_one" checked /> One-to-one</label>
+        <label><input type="radio" name="session" value="group" /> Small group</label>
+        <label><input type="radio" name="session" value="outing" /> Outing</label>
+      </div>
+      <label class="field">Care home town <input id="location" value="Brighton" maxlength="80" /></label>
+      <label class="field">Notes for the agent <textarea id="notes" rows="2" maxlength="500" placeholder="e.g. Friday afternoon, 45 minutes, lounge has a piano"></textarea></label>
+
+      <button id="go" class="btn primary">Plan the session</button>
+      <p class="privacy">Use first names only. Nothing is stored; Qloo returns aggregate taste affinities, not data about individuals.</p>
+    </section>
+
+    <section class="panel work" aria-labelledby="work-h">
+      <h2 id="work-h">Agent at work</h2>
+      <ol id="trace" class="trace" aria-live="polite"><li class="muted">Choose residents and press <b>Plan the session</b>.</li></ol>
+      <div id="plan" class="plan"></div>
+    </section>
+  </main>
+
+  <footer class="foot">Built for the Qloo Agentic Hackathon · Qloo Taste AI + Claude · MIT licensed</footer>
+  <script src="/static/app.js"></script>
+</body>
+</html>
