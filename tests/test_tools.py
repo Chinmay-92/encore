@@ -1,5 +1,5 @@
 from app.qloo import MockQloo
-from app.tools import TOOL_DEFS, ToolRunner, age_band, reminiscence_window
+from app.tools import TOOL_DEFS, ToolRunner, age_band, reminiscence_window, uk_location
 
 
 def test_reminiscence_and_age_band():
@@ -47,7 +47,7 @@ async def test_places_use_location_query():
     q = MockQloo()
     tr = ToolRunner(q)
     out = await tr.run("find_outing_places", {"seed_entity_ids": ["x"], "location": "Hove"})
-    assert q.calls[-1][1]["filter.location.query"] == "Hove"
+    assert q.calls[-1][1]["filter.location.query"] == "Hove, United Kingdom"
     assert q.calls[-1][1]["filter.type"] == "urn:entity:place"
     assert out["results"] and "Hove" in out["results"][0]["address"]
 
@@ -75,3 +75,9 @@ async def test_submit_plan_flags_ungrounded_and_errors_are_returned():
     assert res["ungrounded_items"] == ["Made up"]
     assert "error" in await tr.run("taste_recommendations", {"seed_entity_ids": [], "type": "music"})
     assert "error" in await tr.run("does_not_exist", {})
+
+
+def test_uk_location_adds_country_only_when_missing():
+    assert uk_location("Brighton") == "Brighton, United Kingdom"
+    assert uk_location(" Kingston upon Thames ") == "Kingston upon Thames, United Kingdom"
+    assert uk_location("Brighton, CO") == "Brighton, CO"

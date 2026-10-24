@@ -27,6 +27,13 @@ def age_band(birth_year: int | None, this_year: int = 2026) -> str:
     return "35_and_younger"
 
 
+def uk_location(location: str) -> str:
+    """Qloo resolves a bare 'Brighton' to Brighton, Colorado. Encore is built for UK
+    care homes, so a town with no region or country gets ', United Kingdom' added."""
+    location = location.strip()
+    return location if "," in location else f"{location}, United Kingdom"
+
+
 def _schema(props: dict, required: list[str]) -> dict:
     return {"type": "object", "properties": props, "required": required, "additionalProperties": False}
 
@@ -213,7 +220,7 @@ class ToolRunner:
     ) -> dict:
         params: dict[str, Any] = {
             "filter.type": to_urn("place"),
-            "filter.location.query": location,
+            "filter.location.query": uk_location(location),
             "signal.interests.entities": seed_entity_ids,
             "signal.demographics.age": "55_and_older",
             "take": take,
