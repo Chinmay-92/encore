@@ -1,12 +1,28 @@
-# Render Blueprint (optional). Set QLOO_API_KEY and ANTHROPIC_API_KEY in the dashboard.
+# Render Blueprint for the Encore public demo (Qloo Agentic Hackathon).
+# Create it in Render: New > Blueprint > select this repository.
+# FREE TIER: the web service sleeps after 15 idle minutes (~1 min cold start for the
+# first visitor). Before submission, consider plan: starter so judges never hit a cold start.
+# Secrets are prompted once at creation (sync: false); never commit them.
+
 services:
   - type: web
     name: encore
     runtime: docker
     plan: free
+    branch: master
+    autoDeployTrigger: commit
     healthCheckPath: /api/health
     envVars:
+      # Hackathon key from the Qloo developer guide; only works against the hackathon base URL.
       - key: QLOO_API_KEY
         sync: false
+      - key: QLOO_BASE_URL
+        value: https://hackathon.api.qloo.com
+      # Optional: without it the deterministic scripted planner drives the same Qloo tools.
       - key: ANTHROPIC_API_KEY
         sync: false
+      - key: ENCORE_MODEL
+        value: claude-sonnet-5-5
+      # Caps concurrent agent runs so a burst of visitors can't exhaust the Qloo key.
+      - key: MAX_CONCURRENT_RUNS
+        value: "4"
