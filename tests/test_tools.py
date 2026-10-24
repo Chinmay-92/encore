@@ -1,5 +1,14 @@
 from app.qloo import MockQloo
-from app.tools import TOOL_DEFS, ToolRunner, age_band, reminiscence_window, uk_location
+from app.tools import (
+    DEFAULT_OUTING_TAGS,
+    OUTING_EXCLUDE_TAGS,
+    TOOL_DEFS,
+    ToolRunner,
+    age_band,
+    diversify,
+    reminiscence_window,
+    uk_location,
+)
 
 
 def test_reminiscence_and_age_band():
@@ -52,6 +61,65 @@ async def test_places_use_location_query():
     assert out["results"] and "Hove" in out["results"][0]["address"]
 
 
+async def test_places_default_to_older_friendly_categories():
+    q = MockQloo()
+    tr = ToolRunner(q)
+    out = await tr.run("find_outing_places", {"seed_entity_ids": ["x"], "location": "Brighton", "take": 6})
+    params = q.calls[0][1]
+    assert params["filter.tags"] == DEFAULT_OUTING_TAGS
+    assert "urn:tag:category:place:tea_house" in params["filter.tags"]
+    assert {"urn:tag:category:place:bar", "urn:tag:category:place:night_club", "urn:tag:category:place:pub"} <= set(params["filter.exclude.tags"])
+    names = {r["name"] for r in out["results"]}
+    assert names and not names & {"The Seven Stars", "Club Neon", "Caribbean Kitchen"}
+    assert all(r.get("kind") for r in out["results"])
+    kinds = [r["kind"] for r in out["results"][:3]]
+    assert len(set(kinds)) == 3  # diversified: three different kinds of outing up front
+
+
+async def test_places_tag_override_keeps_safety_exclusions():
+    q = MockQloo()
+    tr = ToolRunner(q)
+    caribbean = "urn:tag:category:place:caribbean_restaurant"
+    out = await tr.run("find_outing_places", {"seed_entity_ids": ["x"], "location": "Brighton", "tag_ids": [caribbean],
+                                              "exclude_tag_ids": ["urn:tag:category:place:live_music_venue"], "take": 1})
+    params = q.calls[0][1]
+    assert params["filter.tags"] == [caribbean]
+    assert set(OUTING_EXCLUDE_TAGS) <= set(params["filter.exclude.tags"])
+    assert "urn:tag:category:place:live_music_venue" in params["filter.exclude.tags"]
+    assert [r["name"] for r in out["results"]] == ["Caribbean Kitchen"]
+
+
+class SparseQloo(MockQloo):
+    """Like live Qloo in smaller towns: the taste-signalled query returns almost nothing."""
+
+    async def insights(self, params):
+        items = await super().insights(params)
+        return items[:1] if "signal.interests.entities" in params else items
+
+
+async def test_places_top_up_when_taste_results_are_thin():
+    q = SparseQloo()
+    tr = ToolRunner(q)
+    out = await tr.run("find_outing_places", {"seed_entity_ids": ["x"], "location": "Kingston upon Thames", "take": 4})
+    assert len(q.calls) == 2 and "signal.interests.entities" not in q.calls[1][1]
+    assert q.calls[1][1]["filter.tags"] == DEFAULT_OUTING_TAGS  # top-up stays within safe categories
+    matches = [r["match"] for r in out["results"]]
+    assert len(out["results"]) == 4 and matches.count("taste") == 1 and matches.count("popular locally") == 3
+    assert len({r["entity_id"] for r in out["results"]}) == 4
+
+
+def test_diversify_keeps_order_within_kinds():
+    items = [{"n": 1, "kind": "tea room"}, {"n": 2, "kind": "tea room"}, {"n": 3, "kind": "park or garden"}, {"n": 4, "kind": "museum"}]
+    assert [i["n"] for i in diversify(items)] == [1, 3, 4, 2]
+
+
+async def test_search_tags_can_restrict_to_place_categories():
+    q = MockQloo()
+    out = await ToolRunner(q).run("search_tags", {"query": "tea", "places_only": True})
+    assert q.calls[-1][1]["filter.tag.types"] == "urn:tag:category:place"
+    assert out["tags"] and all(t["type"] == "urn:tag:category:place" for t in out["tags"])
+
+
 async def test_group_common_ground_ranks_by_floor():
     q = MockQloo()
     tr = ToolRunner(q)
@@ -81,3 +149,18 @@ def test_uk_location_adds_country_only_when_missing():
     assert uk_location("Brighton") == "Brighton, United Kingdom"
     assert uk_location(" Kingston upon Thames ") == "Kingston upon Thames, United Kingdom"
     assert uk_location("Brighton, CO") == "Brighton, CO"
+
+
+async def test_one_failed_search_does_not_sink_the_batch():
+    from app.qloo import QlooError
+
+    class Flaky(MockQloo):
+        async def search(self, query, kind=None, take=5):
+            if query == "Mohammed Rafi":
+                raise QlooError("Qloo /search returned 429")
+            return await super().search(query, kind, take)
+
+    out = await ToolRunner(Flaky()).run("search_entities", {"queries": [
+        {"name": "Lata Mangeshkar", "type": "artist"}, {"name": "Mohammed Rafi", "type": "artist"}]})
+    assert out["results"][0]["best"]["name"] == "Lata Mangeshkar"
+    assert out["results"][1]["best"] is None and "429" in out["results"][1]["error"]

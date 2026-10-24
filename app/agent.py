@@ -53,7 +53,8 @@ How to work:
 1. Resolve every favourite to a Qloo entity with search_entities (one batched call).
 2. Use taste_recommendations to expand each resident's taste ACROSS domains (music -> films, \
 films -> TV, etc.). Pass birth_year so films/TV/books land in their reminiscence bump.
-3. For outings, use find_outing_places near the care home location.
+3. For outings, use find_outing_places near the care home location. Its defaults already keep to calm, \
+daytime, older-friendly venues; only pass tag_ids for something specific (e.g. food from a resident's heritage).
 4. For group sessions, collect candidates per resident, then call group_common_ground and prefer \
 items with the highest group_floor so nobody is left out.
 5. Finish by calling submit_plan exactly once.
@@ -87,7 +88,8 @@ def summarise_result(name: str, result: dict) -> str:
         return f"error: {result['error']}"
     if name == "search_entities":
         found = [r["best"]["name"] for r in result["results"] if r.get("best")]
-        return f"resolved {len(found)}: " + ", ".join(found)
+        missed = [r["query"] for r in result["results"] if not r.get("best")]
+        return f"resolved {len(found)}: " + ", ".join(found) + (f" (not found: {', '.join(missed)})" if missed else "")
     if name in ("taste_recommendations", "find_outing_places"):
         items = result.get("results", [])
         top = ", ".join(f"{i['name']} ({i.get('affinity', 0):.2f})" for i in items[:4])
@@ -127,7 +129,7 @@ class ScriptedAgent:
             evs, res = await self._call("search_entities", {"queries": [f.model_dump() for f in r.favourites]})
             for e in evs:
                 yield e
-            seeds[r.id] = [x["best"] for x in res["results"] if x.get("best")]
+            seeds[r.id] = [x["best"] for x in res.get("results", []) if x.get("best")]
 
         picks: dict[str, dict[str, list[dict]]] = {}
         for r in req.residents:
@@ -185,6 +187,15 @@ class ScriptedAgent:
         base = f"Taste-graph neighbour of {drivers[0]}" if drivers else "Strong taste-graph match"
         return base + (f" (affinity {aff:.2f})." if aff is not None else ".")
 
+    @staticmethod
+    def _place_why(pl: dict) -> str:
+        kind = (pl.get("kind") or ", ".join(pl.get("tags", [])[:2]) or "Local venue").capitalize()
+        if pl.get("wheelchair_accessible"):
+            kind += ", wheelchair-accessible entrance"
+        reason = "matches their taste" if pl.get("match") == "taste" else "popular with over-55s nearby"
+        aff = pl.get("affinity")
+        return f"{kind} - {reason}" + (f" (affinity {aff:.2f})." if aff is not None else ".")
+
     def _compose(self, req, seeds, picks, places, group_music) -> dict:
         names = " & ".join(r.name for r in req.residents)
         sections: list[dict] = []
@@ -211,8 +222,7 @@ class ScriptedAgent:
                 {"name": i["name"], "entity_id": i["entity_id"], "why": self._why(i, s)} for i in p["tv_show"][:2]]})
         if places:
             sections.append({"kind": "outing", "title": f"Outing ideas near {req.location}", "items": [
-                {"name": pl["name"], "entity_id": pl["entity_id"], "why": f"{', '.join(pl.get('tags', [])[:2])} - matches the group's taste (affinity {pl.get('affinity', 0):.2f})."}
-                for pl in places[:3]]})
+                {"name": pl["name"], "entity_id": pl["entity_id"], "why": self._place_why(pl)} for pl in places[:3]]})
         first = req.residents[0]
         fav = first.favourites[0].name
         return {

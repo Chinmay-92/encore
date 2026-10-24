@@ -34,6 +34,52 @@ def uk_location(location: str) -> str:
     return location if "," in location else f"{location}, United Kingdom"
 
 
+def _place_tags(*slugs: str) -> list[str]:
+    return [f"urn:tag:category:place:{s}" for s in slugs]
+
+
+# Unfiltered, Qloo's place results for a town skew to whatever its taste graph rates highly:
+# in Brighton that means bars and nightspots. Outings for people living with dementia need calm,
+# daytime venues, so by default we restrict to these Qloo place categories (filter.tags is OR).
+OUTING_CATEGORIES: dict[str, list[str]] = {
+    "tea room": _place_tags("tea_house"),
+    "museum": _place_tags("museum", "art_museum", "history_museum", "local_history_museum"),
+    "art gallery": _place_tags("art_gallery"),
+    "park or garden": _place_tags("park", "garden", "botanical_garden"),
+    "garden centre": _place_tags("garden_center"),
+    "theatre": _place_tags("performing_arts_theater", "concert_hall"),
+    "cinema": _place_tags("movie_theater"),
+    "seafront": _place_tags("pier", "promenade"),
+    "library": _place_tags("library", "public_library"),
+}
+DEFAULT_OUTING_TAGS = [t for tags in OUTING_CATEGORIES.values() for t in tags]
+# Always excluded, even when the agent picks its own tag_ids. Coffee stands/stores drop the
+# takeaway chains that Qloo also files under "tea house".
+OUTING_EXCLUDE_TAGS = _place_tags(
+    "bar", "pub", "night_club", "nightlife", "live_music_bar", "cocktail_bar", "wine_bar", "beer_hall",
+    "casino", "comedy_club", "fast_food", "fast_food_restaurant", "hotel", "coffee_stand", "coffee_store",
+)
+_KIND_BY_TAG_NAME = {t.rsplit(":", 1)[-1].replace("_", " "): kind for kind, tags in OUTING_CATEGORIES.items() for t in tags}
+
+
+def outing_kind(place: dict) -> str | None:
+    """Which curated category a place belongs to, from its (category-first) tag names."""
+    for name in place.get("tags", []):
+        if kind := _KIND_BY_TAG_NAME.get(name.lower()):
+            return kind
+    return None
+
+
+def diversify(items: list[dict], key: str = "kind") -> list[dict]:
+    """Keep rank order, but let the best of each kind go first so three outing ideas aren't three tea rooms."""
+    seen: set = set()
+    first, rest = [], []
+    for it in items:
+        (rest if it.get(key) in seen else first).append(it)
+        seen.add(it.get(key))
+    return first + rest
+
+
 def _schema(props: dict, required: list[str]) -> dict:
     return {"type": "object", "properties": props, "required": required, "additionalProperties": False}
 
@@ -83,14 +129,20 @@ TOOL_DEFS: list[dict] = [
     {
         "name": "find_outing_places",
         "description": (
-            "Find real venues near the care home that fit the resident's taste (tea rooms, dance halls, gardens, "
-            "cinemas, restaurants serving the food of their heritage). Optionally filter by Qloo tag IDs from search_tags."
+            "Find real venues near the care home that fit the resident's taste. By default results are limited to "
+            "calm, older-friendly daytime venues: tea rooms, museums, art galleries, parks and gardens, garden centres, "
+            "theatres and concert halls, cinemas, piers and promenades, libraries. Bars, pubs, nightclubs, fast food "
+            "and hotels are always excluded. Each result has a 'kind' and 'match' ('taste' = matched to the seeds, "
+            "'popular locally' = well liked by over-55s nearby, used to top up thin results). Pass tag_ids "
+            "(urn:tag:category:place:... from search_tags) only to target something else, e.g. a restaurant serving "
+            "the food of a resident's heritage."
         ),
         "input_schema": _schema(
             {
                 "seed_entity_ids": {"type": "array", "items": {"type": "string"}},
                 "location": {"type": "string", "description": "Town or city of the care home, e.g. 'Brighton'."},
-                "tag_ids": {"type": "array", "items": {"type": "string"}},
+                "tag_ids": {"type": "array", "items": {"type": "string"}, "description": "Overrides the default venue categories (any tag matches)."},
+                "exclude_tag_ids": {"type": "array", "items": {"type": "string"}, "description": "Extra venue tags to avoid, e.g. loud live-music venues."},
                 "take": {"type": "integer", "minimum": 1, "maximum": 10},
             },
             ["seed_entity_ids", "location"],
@@ -98,8 +150,11 @@ TOOL_DEFS: list[dict] = [
     },
     {
         "name": "search_tags",
-        "description": "Look up Qloo tag IDs (genres, cuisines, venue kinds) by keyword, for use with find_outing_places or exclude_tag_ids.",
-        "input_schema": _schema({"query": {"type": "string"}}, ["query"]),
+        "description": (
+            "Look up Qloo tag IDs (genres, cuisines, venue kinds) by keyword, for use with find_outing_places or "
+            "exclude_tag_ids. Set places_only to get venue categories (urn:tag:category:place:...)."
+        ),
+        "input_schema": _schema({"query": {"type": "string"}, "places_only": {"type": "boolean"}}, ["query"]),
     },
     {
         "name": "group_common_ground",
@@ -182,7 +237,10 @@ class ToolRunner:
     async def t_search_entities(self, queries: list[dict]) -> dict:
         async def one(q: dict) -> dict:
             self.qloo_calls += 1
-            hits = await self.qloo.search(q["name"], q.get("type"), take=3)
+            try:
+                hits = await self.qloo.search(q["name"], q.get("type"), take=3)
+            except QlooError as exc:  # one failed lookup shouldn't sink the whole batch
+                return {"query": q["name"], "best": None, "alternatives": [], "error": str(exc)}
             self._remember(hits)
             return {"query": q["name"], "best": hits[0] if hits else None, "alternatives": [h["name"] for h in hits[1:3]]}
 
@@ -216,23 +274,39 @@ class ToolRunner:
         return {"type": type, "reminiscence_window": window, "results": items}
 
     async def t_find_outing_places(
-        self, seed_entity_ids: list[str], location: str, tag_ids: list[str] | None = None, take: int = 6
+        self,
+        seed_entity_ids: list[str],
+        location: str,
+        tag_ids: list[str] | None = None,
+        exclude_tag_ids: list[str] | None = None,
+        take: int = 6,
     ) -> dict:
         params: dict[str, Any] = {
             "filter.type": to_urn("place"),
             "filter.location.query": uk_location(location),
+            "filter.tags": tag_ids or DEFAULT_OUTING_TAGS,
+            "filter.exclude.tags": list(dict.fromkeys(OUTING_EXCLUDE_TAGS + (exclude_tag_ids or []))),
             "signal.interests.entities": seed_entity_ids,
             "signal.demographics.age": "55_and_older",
-            "take": take,
+            "take": min(take * 2, 20),  # over-fetch a little so diversify() has a choice of kinds
         }
-        if tag_ids:
-            params["filter.tags"] = tag_ids
         self.qloo_calls += 1
-        return {"location": location, "results": self._remember(await self.qloo.insights(params))}
+        places = [{**p, "match": "taste"} for p in await self.qloo.insights(params)]
+        if len(places) < take:
+            # Taste signals are sparse for smaller towns (Kingston returns ~2 matches), so top up
+            # with venues popular with over-55s nearby, still within the same safe categories.
+            local = {k: v for k, v in params.items() if k != "signal.interests.entities"}
+            self.qloo_calls += 1
+            have = {p["entity_id"] for p in places}
+            places += [{**p, "match": "popular locally"} for p in await self.qloo.insights(local) if p["entity_id"] not in have]
+        for p in places:
+            if kind := outing_kind(p):
+                p["kind"] = kind
+        return {"location": location, "results": self._remember(diversify(places)[:take])}
 
-    async def t_search_tags(self, query: str) -> dict:
+    async def t_search_tags(self, query: str, places_only: bool = False) -> dict:
         self.qloo_calls += 1
-        return {"tags": await self.qloo.tags(query)}
+        return {"tags": await self.qloo.tags(query, tag_type="urn:tag:category:place" if places_only else None)}
 
     async def t_group_common_ground(self, type: str, candidate_entity_ids: list[str], residents: list[dict]) -> dict:
         async def score(r: dict) -> tuple[str, dict[str, float]]:

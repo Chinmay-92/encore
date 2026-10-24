@@ -22,7 +22,7 @@ INSIGHTS_BODY = {
 
 
 def make_client(handler):
-    return QlooClient("test-key", transport=httpx.MockTransport(handler))
+    return QlooClient("test-key", transport=httpx.MockTransport(handler), retry_delay=0)
 
 
 async def test_insights_request_shape_and_parsing():
@@ -96,3 +96,19 @@ def test_to_urn_and_factory():
 def test_slim_entity_drops_noise():
     e = slim_entity({"entity_id": "x", "name": "n", "properties": {"akas": [1, 2]}})
     assert "akas" not in e
+
+
+def test_slim_place_surfaces_category_tags_and_accessibility():
+    e = slim_entity({
+        "entity_id": "P1", "name": "Stanmer Tea Rooms", "types": ["urn:entity:place"],
+        "tags": [
+            {"id": "urn:tag:credit_card:place:mastercard", "name": "Mastercard"},
+            {"id": "urn:tag:accessibility:place:wheelchair_accessible_entrance", "name": "Wheelchair accessible entrance"},
+            {"id": "urn:tag:genre:place:tourist_attraction", "name": "Tourist attraction"},
+            {"id": "urn:tag:category:place:tea_house", "name": "Tea house"},
+            {"id": "urn:tag:genre:place:tea_house", "name": "Tea house"},
+            {"id": "urn:tag:category:place:place", "name": "Place"},
+        ],
+    })
+    assert e["tags"] == ["Tea house", "Tourist attraction", "Mastercard", "Wheelchair accessible entrance"]
+    assert e["wheelchair_accessible"] is True

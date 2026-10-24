@@ -56,9 +56,9 @@ input, textarea { font: inherit; font-size: 1rem; padding: .55rem .7rem; border-
 input:focus-visible, textarea:focus-visible, button:focus-visible, .res:focus-within { outline: 3px solid var(--teal); outline-offset: 2px; }
 .field { margin-top: .7rem; }
 .seg { display: flex; gap: .4rem; flex-wrap: wrap; }
-.seg label { display: flex; align-items: center; gap: .4rem; padding: .45rem .8rem; border: 2px solid var(--line); border-radius: 999px; cursor: pointer; font-weight: 400; }
+.seg label { display: flex; align-items: center; gap: .4rem; white-space: nowrap; padding: .45rem .8rem; border: 2px solid var(--line); border-radius: 999px; cursor: pointer; font-weight: 400; }
 .seg label:has(input:checked) { border-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
-.seg input { accent-color: var(--accent); }
+.seg input { accent-color: var(--accent); width: 1.1rem; height: 1.1rem; margin: 0; padding: 0; }
 .btn { font: inherit; font-weight: 700; border-radius: 12px; padding: .8rem 1.2rem; border: 2px solid var(--accent); cursor: pointer; }
 .btn.primary { background: var(--accent); color: var(--accent-ink); width: 100%; margin-top: 1rem; font-size: 1.05rem; }
 .btn.primary:disabled { opacity: .6; cursor: progress; }

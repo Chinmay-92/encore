@@ -35,6 +35,17 @@ def _e(name: str, urn: str, pop: float, tags: list[str], **props: Any) -> dict:
 
 A, M, T, B, P = "urn:entity:artist", "urn:entity:movie", "urn:entity:tv_show", "urn:entity:book", "urn:entity:place"
 
+
+def _place(name: str, pop: float, categories: list[str], genres: list[str], **props: Any) -> dict:
+    e = _e(name, P, pop, genres, **props)
+    e["tags"] = [
+        {"id": f"urn:tag:category:place:{c.lower().replace(' ', '_')}", "name": c, "type": "urn:tag:category:place"} for c in categories
+    ] + e["tags"]
+    if props.get("business_rating", 0) >= 4.5:
+        e["tags"].append({"id": "urn:tag:accessibility:place:wheelchair_accessible_entrance", "name": "Wheelchair accessible entrance"})
+    return e
+
+
 CATALOG: list[dict] = [
     # Artists
     _e("Elvis Presley", A, 0.99, ["Rock and Roll", "Rockabilly"], short_description="The King of Rock and Roll"),
@@ -96,27 +107,33 @@ CATALOG: list[dict] = [
     _e("All Creatures Great and Small", B, 0.85, ["Memoir", "Countryside"], release_year=1972),
     _e("Cider with Rosie", B, 0.74, ["Memoir", "Countryside"], release_year=1959),
     _e("The Lonely Londoners", B, 0.68, ["Literary Fiction", "Windrush"], release_year=1956),
-    # Places (around Brighton & Hove by default; address rewritten to the queried locality)
-    _e("The Regency Tea Rooms", P, 0.71, ["Tea Room", "Cafe", "Afternoon Tea"], address="Seafront", business_rating=4.6, price_level=2),
-    _e("Bandstand on the Promenade", P, 0.66, ["Live Music", "Outdoor", "Bandstand"], address="Promenade", business_rating=4.5),
-    _e("The Old Pier Fish & Chips", P, 0.78, ["Fish and Chips", "Seafood", "British"], address="Pier Approach", business_rating=4.4, price_level=1),
-    _e("Grand Ballroom Tea Dance", P, 0.58, ["Dance Hall", "Tea Dance", "Live Music"], address="Town Hall", business_rating=4.7, price_level=1),
-    _e("Botanic Glasshouse & Garden", P, 0.69, ["Garden", "Park", "Accessible"], address="Park Lane", business_rating=4.8),
-    _e("Classic Picture House", P, 0.64, ["Cinema", "Classic Films", "Dementia Friendly Screenings"], address="High Street", business_rating=4.6, price_level=1),
-    _e("Caribbean Kitchen", P, 0.61, ["Caribbean", "Restaurant"], address="Market Street", business_rating=4.5, price_level=2),
-    _e("Spice of Punjab", P, 0.63, ["Indian", "Punjabi", "Restaurant"], address="Station Road", business_rating=4.4, price_level=2),
+    # Places (around Brighton & Hove by default; address rewritten to the queried locality).
+    # Category tags use real Qloo IDs so default outing filters behave as they do live.
+    _place("The Regency Tea Rooms", 0.71, ["Tea house", "Cafe"], ["Afternoon Tea"], address="Seafront", business_rating=4.6, price_level=2),
+    _place("Bandstand on the Promenade", 0.66, ["Promenade", "Tourist attraction"], ["Live Music", "Outdoor"], address="Promenade", business_rating=4.5),
+    _place("The Palace Pier", 0.83, ["Pier", "Tourist attraction"], ["Seaside", "Fish and Chips"], address="Madeira Drive", business_rating=4.4, price_level=1),
+    _place("Grand Ballroom Tea Dance", 0.58, ["Concert hall", "Event venue"], ["Tea Dance", "Live Music"], address="Town Hall", business_rating=4.7, price_level=1),
+    _place("Botanic Glasshouse & Garden", 0.69, ["Botanical garden", "Park"], ["Accessible"], address="Park Lane", business_rating=4.8),
+    _place("Classic Picture House", 0.64, ["Movie theater"], ["Classic Films", "Dementia Friendly Screenings"], address="High Street", business_rating=4.6, price_level=1),
+    _place("Town Museum & Art Gallery", 0.72, ["Museum", "Art gallery"], ["Local History"], address="Church Street", business_rating=4.6),
+    _place("Caribbean Kitchen", 0.61, ["Caribbean restaurant", "Restaurant"], [], address="Market Street", business_rating=4.5, price_level=2),
+    _place("Spice of Punjab", 0.63, ["Indian restaurant", "Restaurant"], ["Punjabi"], address="Station Road", business_rating=4.4, price_level=2),
+    # Unsuitable for these outings; the default filters must keep them out (as live Qloo would return them).
+    _place("The Seven Stars", 0.88, ["Pub", "Bar"], ["Live Music"], address="Ship Street", business_rating=4.3, price_level=2),
+    _place("Club Neon", 0.85, ["Night club", "Bar"], ["Dance"], address="West Street", business_rating=3.9, price_level=2),
 ]
 
 BY_NAME = {e["name"].lower(): e for e in CATALOG}
 BY_ID = {e["entity_id"]: e for e in CATALOG}
 
 _TAGS = [
-    {"id": "urn:tag:genre:place:tea_room", "name": "Tea Room", "type": "urn:tag:genre:place"},
-    {"id": "urn:tag:genre:place:fish_and_chips", "name": "Fish and Chips", "type": "urn:tag:genre:place"},
+    {"id": "urn:tag:category:place:tea_house", "name": "Tea house", "type": "urn:tag:category:place"},
+    {"id": "urn:tag:category:place:fish_and_chips_restaurant", "name": "Fish and chips restaurant", "type": "urn:tag:category:place"},
     {"id": "urn:tag:genre:media:musical", "name": "Musical", "type": "urn:tag:genre:media"},
     {"id": "urn:tag:genre:music:big_band", "name": "Big Band", "type": "urn:tag:genre:music"},
-    {"id": "urn:tag:genre:place:dance_hall", "name": "Dance Hall", "type": "urn:tag:genre:place"},
-    {"id": "urn:tag:genre:place:garden", "name": "Garden", "type": "urn:tag:genre:place"},
+    {"id": "urn:tag:category:place:caribbean_restaurant", "name": "Caribbean restaurant", "type": "urn:tag:category:place"},
+    {"id": "urn:tag:category:place:indian_restaurant", "name": "Indian restaurant", "type": "urn:tag:category:place"},
+    {"id": "urn:tag:category:place:garden", "name": "Garden", "type": "urn:tag:category:place"},
 ]
 
 
@@ -155,6 +172,7 @@ def mock_insights(params: dict[str, Any]) -> list[dict]:
     signal_ids = _ids(params.get("signal.interests.entities"))
     only_ids = set(_ids(params.get("filter.results.entities")))
     exclude_tags = {t.split(":")[-1] for t in _ids(params.get("filter.exclude.tags"))}
+    include_tags = set(_ids(params.get("filter.tags")))  # OR semantics, like Qloo's default
     take = int(params.get("take", 10))
     loc = params.get("filter.location.query") or params.get("signal.location.query")
     seed = ",".join(sorted(signal_ids)) + "|" + str(params.get("signal.demographics.age", ""))
@@ -167,6 +185,8 @@ def mock_insights(params: dict[str, Any]) -> list[dict]:
         if e["entity_id"] in signal_ids and not only_ids:
             continue
         if not _year_ok(e, params):
+            continue
+        if include_tags and not any(t["id"] in include_tags for t in e["tags"]):
             continue
         if exclude_tags and any(t["id"].split(":")[-1] in exclude_tags for t in e["tags"]):
             continue
@@ -188,6 +208,7 @@ def mock_insights(params: dict[str, Any]) -> list[dict]:
     return out[:take]
 
 
-def mock_tags(query: str) -> list[dict]:
+def mock_tags(query: str, tag_type: str | None = None) -> list[dict]:
     q = query.lower()
-    return [t for t in _TAGS if q in t["name"].lower()] or _TAGS[:3]
+    pool = [t for t in _TAGS if tag_type is None or t["type"] == tag_type]
+    return [t for t in pool if q in t["name"].lower()] or pool[:3]

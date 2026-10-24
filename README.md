@@ -13,7 +13,7 @@ An LLM on its own guesses: it gives every 85-year-old "Vera Lynn and *Casablanca
 | Resolve each favourite to a real entity | `GET /search?query=&types=urn:entity:artist` |
 | Expand taste **across domains** (music to film to TV to books) | `GET /v2/insights` with `filter.type`, `signal.interests.entities`, `signal.demographics.age`, `feature.explainability=true` |
 | Pin media to the **reminiscence bump** (ages about 8-32, when memories are most durable) | `filter.release_year.min/max` (`filter.publication_year.*` for books) |
-| Find venues near the care home that suit the resident's taste | `filter.type=urn:entity:place` + `filter.location.query` |
+| Find venues near the care home that suit the resident's taste, limited to calm daytime places (tea rooms, museums, galleries, parks and gardens, garden centres, theatres, cinemas, piers, libraries), never bars, pubs, nightclubs, fast food or hotels | `filter.type=urn:entity:place` + `filter.location.query` + `filter.tags` (category tags, OR) + `filter.exclude.tags`; a second call without taste signals tops up thin results |
 | **Group sessions:** score candidates against *each* resident and rank by the lowest score, so nobody is left out | `filter.results.entities` + per-resident `signal.interests.entities` |
 | Avoid triggers | `filter.exclude.tags` (agent-driven) |
 

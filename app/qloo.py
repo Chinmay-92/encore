@@ -13,6 +13,7 @@ A MockQloo with realistic fixtures is used when QLOO_API_KEY is not set.
 
 from __future__ import annotations
 
+import asyncio
 import time
 from typing import Any, Protocol
 
@@ -35,6 +36,9 @@ ENTITY_TYPES = {
 }
 
 AGE_BANDS = {"55_and_older", "36_to_55", "35_and_younger"}
+
+TAG_PRIORITY = (":category:", ":genre:")
+GENERIC_TAG_NAMES = {"Place"}
 
 
 class QlooError(RuntimeError):
@@ -76,9 +80,15 @@ def slim_entity(e: dict[str, Any]) -> dict[str, Any]:
             out["because_of"] = [
                 {"entity_id": d.get("entity_id"), "score": round(float(d.get("score", 0)), 2)} for d in drivers[:3]
             ]
-    tags = e.get("tags") or []
+    tags = [t for t in e.get("tags") or [] if t.get("name")]
     if tags:
-        out["tags"] = [t.get("name") for t in tags[:6] if t.get("name")]
+        # Places carry dozens of tags (payments, parking...) in no useful order; surface what
+        # the venue *is* (category, then genre) so the agent and UI see "Tea house", not "Mastercard".
+        ranked = sorted(tags, key=lambda t: next((i for i, p in enumerate(TAG_PRIORITY) if p in (t.get("id") or "")), len(TAG_PRIORITY)))
+        names = dict.fromkeys(t["name"] for t in ranked if t["name"] not in GENERIC_TAG_NAMES)  # de-dupe, keep order
+        out["tags"] = list(names)[:6]
+    if any("wheelchair_accessible_entrance" in (t.get("id") or "") for t in tags):
+        out["wheelchair_accessible"] = True
     loc = e.get("location") or {}
     if loc.get("lat") is not None:
         out["location"] = {"lat": loc.get("lat"), "lon": loc.get("lon")}
@@ -92,7 +102,7 @@ class QlooLike(Protocol):
 
     async def insights(self, params: dict[str, Any]) -> list[dict]: ...
 
-    async def tags(self, query: str, take: int = 8) -> list[dict]: ...
+    async def tags(self, query: str, take: int = 8, tag_type: str | None = None) -> list[dict]: ...
 
 
 class QlooClient:
@@ -104,6 +114,8 @@ class QlooClient:
         base_url: str = HACKATHON_BASE_URL,
         transport: httpx.AsyncBaseTransport | None = None,
         cache_ttl: float = 900.0,
+        retry_delay: float = 1.0,
+        max_concurrency: int = 4,
     ) -> None:
         self._client = httpx.AsyncClient(
             base_url=base_url,
@@ -113,6 +125,8 @@ class QlooClient:
         )
         self._cache: dict[tuple, tuple[float, Any]] = {}
         self._ttl = cache_ttl
+        self._retry_delay = retry_delay
+        self._gate = asyncio.Semaphore(max_concurrency)  # the hackathon key rate-limits bursts of parallel calls
 
     async def aclose(self) -> None:
         await self._client.aclose()
@@ -124,8 +138,14 @@ class QlooClient:
         if hit and time.monotonic() - hit[0] < self._ttl:
             return hit[1]
         for attempt in range(2):  # bounded retry, per hackathon safe-use rules
-            resp = await self._client.get(path, params=clean)
+            async with self._gate:
+                resp = await self._client.get(path, params=clean)
             if resp.status_code == 429 and attempt == 0:
+                try:
+                    wait = float(resp.headers.get("retry-after", self._retry_delay))
+                except ValueError:
+                    wait = self._retry_delay
+                await asyncio.sleep(min(wait, 5.0))  # back off before the single retry
                 continue
             break
         if resp.status_code == 404:
@@ -153,8 +173,8 @@ class QlooClient:
         entities = results.get("entities") if isinstance(results, dict) else results
         return [slim_entity(e) for e in entities or []]
 
-    async def tags(self, query: str, take: int = 8) -> list[dict]:
-        data = await self._get("/v2/tags", {"filter.query": query, "take": take})
+    async def tags(self, query: str, take: int = 8, tag_type: str | None = None) -> list[dict]:
+        data = await self._get("/v2/tags", {"filter.query": query, "filter.tag.types": tag_type, "take": take})
         results = data.get("results") or {}
         tags = results.get("tags") if isinstance(results, dict) else results
         return [{"id": t.get("id"), "name": t.get("name"), "type": t.get("type")} for t in tags or []]
@@ -179,9 +199,9 @@ class MockQloo:
         self.calls.append(("/v2/insights", dict(params)))
         return [slim_entity(e) for e in fixtures.mock_insights(params)]
 
-    async def tags(self, query: str, take: int = 8) -> list[dict]:
-        self.calls.append(("/v2/tags", {"filter.query": query}))
-        return fixtures.mock_tags(query)[:take]
+    async def tags(self, query: str, take: int = 8, tag_type: str | None = None) -> list[dict]:
+        self.calls.append(("/v2/tags", {"filter.query": query, "filter.tag.types": tag_type}))
+        return fixtures.mock_tags(query, tag_type)[:take]
 
 
 def build_qloo(api_key: str | None, base_url: str | None = None) -> QlooLike:
